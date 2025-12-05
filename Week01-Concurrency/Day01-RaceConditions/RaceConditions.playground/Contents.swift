@@ -1,1 +1,3 @@
-print("Hello Race Conditions")
+import UIKit
+
+var greeting = "Hello, playground"

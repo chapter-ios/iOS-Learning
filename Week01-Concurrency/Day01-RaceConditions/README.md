@@ -35,13 +35,17 @@
         - throw transfer error
 
 ### Edge Cases Handled
-1. balance < amount
-2. 
+1. The balance is less than the withdraw -> Insufficient Funds
+2. Transaction is less than 1 -> Invalid amount
+3. User transfer to its own account -> Self Transfer
+4. deposit Failure -> Deposit Failed
+5. failed transfer because of lack of amount -> Failed transfer
+6. User transfer to unexisting Account -> UnexistingAccount
 
 ## Questions / Uncertainties
 
 [List anything you're still confused about]
-- why in real worl projects, mvvm and singleton not using actors
+- do actor make thread which call it to be parallel, eventhough it is concurrency
 
 ## Code Quality Checklist
 - [ ] No force unwraps

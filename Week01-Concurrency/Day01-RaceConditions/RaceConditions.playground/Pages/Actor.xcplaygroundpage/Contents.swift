@@ -4,15 +4,24 @@ import PlaygroundSupport
 
 PlaygroundPage.current.needsIndefiniteExecution = true
 
+/// Thread-safe counter using Actor isolation.
+/// Actor ensures serial execution of all methods, preventing
+/// race conditions during concurrent read-modify-write operations.
 
-// Implementing safe counter using actor, actor can only be accessed one by one from the other thread, so they wont berebutan when try to access the increment
 actor SafeCounter {
-    var value = 0
+    /// Current count value.
+    /// Access is synchronized through the actor's serial executor.
+
+    private(set)var value = 0
     
+    /// Increments counter by 1.
+    /// This operation is atomic because the actor serializes all access.
+    /// Multiple concurrent calls will execute sequentially, not in parallel.
     func increment() {
         value += 1
     }
     
+    //restarting element each time it finish incrementing
     func restart() {
         value = 0
     }
@@ -34,6 +43,9 @@ class UnsafeCounter: @unchecked Sendable {
 func testUnsafeCounter() async {
     let counter = UnsafeCounter()
     let iterations = 1000
+    let numberOfTask = 10
+    let runCount = 5
+    let expectedTotal = numberOfTask * iterations
     
     // TODO: Run 10 concurrent tasks, each incrementing 1000 times
     // Expected total: 10,000
@@ -42,10 +54,10 @@ func testUnsafeCounter() async {
     
     // YOUR CODE HERE
     await benchMark("unsafe Counter ") {
-        for run in 1...5 {
-            print("start run ke \(run)")
+        for run in 0..<runCount {
+            print("start unsafesafecounter run number \(run)")
             await withTaskGroup(of: Int.self) { group in
-                for _ in 0...9 {
+                for _ in 0..<numberOfTask {
                     for count in 0..<iterations {
                         group.addTask {
                             
@@ -56,7 +68,7 @@ func testUnsafeCounter() async {
                     
                 }
             }
-            print("finish run ke \(run), final result ->>> \( counter.value)")
+            print("finish unsafecounter run number \(run), Result ->>> \(counter.value), expected \(expectedTotal)")
             counter.restart()
         }
     }
@@ -66,6 +78,9 @@ func testUnsafeCounter() async {
 func testSafeCounter() async {
     let counter = SafeCounter()
     let iterations = 1000
+    let numberOfTask = 10
+    let runCount = 5
+    let expectedTotal = numberOfTask * iterations
     
     // TODO: Run 10 concurrent tasks, each incrementing 1000 times
     // Expected total: 10,000
@@ -74,10 +89,10 @@ func testSafeCounter() async {
     
     // YOUR CODE HERE
     await benchMark("safe counter") {
-        for run in 1...5 {
-            print("start run ke \(run)")
+        for run in 0..<runCount {
+            print("start safecounter run number \(run)")
             await withTaskGroup(of: Int.self) { group in
-                for _ in 0...9 {
+                for _ in 0..<numberOfTask {
                     for count in 0..<iterations {
                         group.addTask {
                             
@@ -88,12 +103,13 @@ func testSafeCounter() async {
                     
                 }
             }
-            print("finish run ke \(run), final result ->>> \(await counter.value)")
+            print("finish safecounter run number \(run), Result ->>> \(await counter.value), expected \(expectedTotal)")
             await counter.restart()
         }
     }
     
 }
+
 
 // Run the test
 Task {

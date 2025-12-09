@@ -8,33 +8,70 @@ import Foundation
 enum TransferError: Error {
     case insufficientFunds
     case failedTransfer(String)
+    case invalidAmount
+    case selfTransfer
+    case depositFailed(reason: String)
+    case unexistingAccount
     
     var localized: String {
         switch self {
         case .insufficientFunds:
             "You have insufficient funds"
         case .failedTransfer(let account):
-            "anda \(account) Tidak memiliki dana yg cukup"
+            "You \(account) don't have enough amount of money"
+        case .invalidAmount:
+            "Amount must be bigger than 0"
+        case .selfTransfer:
+            "Cannot self transfer"
+        case .depositFailed(let reason):
+            reason
+        case .unexistingAccount:
+            "The account is not existing"
         }
     }
 }
 
+struct Transactions {
+    
+    let id: String
+    let amount: Decimal
+    let type: TransactionType
+    
+    enum TransactionType {
+        case deposit
+        case withdrawal
+        case transferIn(from: String)
+        case transferOun(to: String)
+    }
+
+}
+
 actor BankAccount {
+    // MARK: Stored properties
     let accountNumber: String
     private(set) var balance: Decimal
+    private(set) var recordOfTransactions: [Transactions] = []
     
     init(accountNumber: String, initialBalance: Decimal) {
         self.accountNumber = accountNumber
         self.balance = initialBalance
     }
     
-    // TODO: Implement these methods
-    func deposit(_ amount: Decimal) {
+    // MARK: Deposit
+    /// Menambahkan saldo.
+    /// - Throws: invalidAmount jika amount <= 0
+    func deposit(_ amount: Decimal) throws {
         // Add to balance
+        
+        guard amount > 0 else {
+            throw TransferError.invalidAmount
+        }
+        
         self.balance += amount
+        self.recordTransaction(type: .deposit, amount: amount)
     }
     
-    func withdraw(_ amount: Decimal) throws {
+    func withdraw(_ amount: Decimal) async throws {
         // Remove from balance
         // Throw error if insufficient funds
         
@@ -42,39 +79,47 @@ actor BankAccount {
             throw TransferError.failedTransfer(accountNumber)
         }
         self.balance -= amount
+        self.recordTransaction(type: .withdrawal, amount: amount)
     }
     
     func transfer(
-        to account: BankAccount,
+        to account: BankAccount?,
         amount: Decimal) async throws
     {
-        // TODO: THIS IS TRICKY!
-        // You need to interact with another actor
-        // How do you ensure atomicity?
-        // What if withdrawal succeeds but deposit fails?
-        var accounts = account
+        ///check if you amount is bigger than 0
+        guard amount > 0 else {
+            throw TransferError.invalidAmount
+        }
         
-        if self.balance >= amount {
-            do {
-                // first, withdraw from your current balance
-                try withdraw(amount)
-                
-                // deposit to targeted account
-                await account.deposit(amount)
-                
-                //create success statement
-                await berhasilTransaksi(
-                    account,
-                    nominal: amount
-                )
-                
-            } catch let error as TransferError {
-                throw TransferError.failedTransfer(self.accountNumber)
+        guard let account = account else {
+            throw TransferError.unexistingAccount
+        }
+
+        guard account.accountNumber != self.accountNumber else {
+            throw TransferError.selfTransfer
+        }
+        
+        var didWithdraw = false
+        do {
+            
+            // withdraw from source
+            try await withdraw(amount)
+            
+            didWithdraw = true
+            // deposit to targeted account
+            try await account.deposit(amount)
+            
+            //create success statement
+            self.recordTransaction(type: .transferOun(to: account.accountNumber), amount: amount)
+            await account.recordTransaction(type: .transferIn(from: self.accountNumber), amount: amount)
+        } catch  {
+            
+            //if failed, then transfer back to the sender
+            if didWithdraw {
+                try self.deposit(amount)
             }
             
-            
-        } else {
-            throw TransferError.failedTransfer(self.accountNumber)
+            throw TransferError.depositFailed(reason: "Cannot transfer to \(account.accountNumber)")
         }
     }
     
@@ -82,54 +127,126 @@ actor BankAccount {
         "Saldo \(self.accountNumber) adalah \(self.balance)"
     }
     
-    private func berhasilTransaksi(
-        _ account: BankAccount,
-        nominal: Decimal
-    ) async {
-        let komunikasi =
-"""
-======================================================================
-Berhasil melakukan Transaksi ke \(account.accountNumber) sejumlah \(nominal)
-Jumlah Saldo Anda \(self.accountNumber) \(self.balance)
-Jumlah Saldo \(account.accountNumber) adalah \(await account.balance)
-======================================================================
-"""
-        print(komunikasi)
+    private func recordTransaction(
+        type: Transactions.TransactionType,
+        amount: Decimal
+    ) {
+        let transaction = Transactions(
+            id: self.accountNumber,
+            amount: amount,
+            type: type
+        )
+        recordOfTransactions.append(transaction)
+        
     }
 }
 
 // TODO: Write comprehensive tests
 func testBankingSystem() async throws {
-    let account1 = BankAccount(accountNumber: "001", initialBalance: 1000)
-    let account2 = BankAccount(accountNumber: "002", initialBalance: 500)
-    
-    // Test 1: Concurrent deposits should all succeed
-    // Test 2: Concurrent withdrawals should respect balance
-    // Test 3: Concurrent transfers between accounts
-    // Test 4: Attempt to overdraw should throw error
-    
-    // YOUR TESTS HERE
+    await testConcurrentDeposits()
+    await testConcurrentTransfer()
+    await testInsufficientFunds()
+    await testInvalidOperations()
+    await testRollbackTransfer()
+}
 
-    print("transaksi sejumlah 200 dari akun 1 ke akun 2")
-    await sleep()
-    async let result2 = await (account1.transfer(to: account2, amount: 200), account1.lihatsaldo(), account2.lihatsaldo())
-    print(try await result2)
+func testConcurrentDeposits() async {
+    print("Test 1: Concurrent Deposits")
+    let account = BankAccount(accountNumber: "001", initialBalance: 0)
     
-    await sleep()
-    print("akan withdraw 300")
-    await sleep()
-    let result3 = await (try account2.withdraw(300), account2.lihatsaldo())
-    print("\(result3.1)")
-    
-    
-    do {
-        await sleep()
-        print("coba gagal withdraw")
-        try await account1.withdraw(1100)
-    } catch let error as TransferError {
-        print(error.localized)
+    await withTaskGroup(of: Void.self) { group in
+        for i in 1...10 {
+            group.addTask {
+                try? await account.deposit(100)
+            }
+        }
     }
     
+    let finalBalance = await account.balance
+    let expected: Decimal = 1000
+    
+    if finalBalance == expected {
+        print("✅ PASS: Final balance = \(finalBalance)")
+    } else {
+        print("❌ FAIL: Expected \(expected), got \(finalBalance)")
+    }
+}
+
+func testInsufficientFunds() async {
+    print("Test 2: Insufficient funds")
+    let account = BankAccount(accountNumber: "100", initialBalance: 100)
+    
+    do {
+        try await account.withdraw(500)
+    } catch let error as TransferError {
+        print(error.localized)
+    } catch {
+        print(error)
+    }
+}
+
+func testConcurrentTransfer() async {
+    print("Test 3: Concurrent Transfer")
+    let accountRahmat = BankAccount(accountNumber: "007", initialBalance: 1000)
+    let accountMarko = BankAccount(accountNumber: "010", initialBalance: 1000)
+    
+    await withTaskGroup(of: Void.self) { group in
+        
+        for transfer in 1...5 {
+            group.addTask {
+                try? await accountRahmat.transfer(to: accountMarko, amount: 200)
+            }
+        }
+    }
+    
+    await withTaskGroup(of: Void.self) { grup in
+        for transfer in 1...5 {
+            grup.addTask {
+                try? await accountMarko.transfer(to: accountRahmat, amount: 200)
+            }
+        }
+    }
+    
+    let rahmatBalanceAfterTransfer = await accountRahmat.balance
+    let markoBalanceAfterTransfer = await accountMarko.balance
+    let totalBalance = rahmatBalanceAfterTransfer + markoBalanceAfterTransfer
+    let expected: Decimal = 2000
+    
+    if totalBalance == expected {
+        print("Pass the test for Transfer \(totalBalance)")
+    } else {
+        print("❌ FAIL: Expected \(expected), got \(rahmatBalanceAfterTransfer)")
+    }
+}
+
+func testInvalidOperations() async {
+    print("Test 4: Invalid Operations")
+    
+    let account = BankAccount(accountNumber: "001", initialBalance: 1000)
+    let account2 = BankAccount(accountNumber: "003", initialBalance: 500)
+    
+    do {
+        try await account.transfer(to: account2, amount: 0)
+    } catch let error as TransferError {
+        print(error.localized)
+    } catch {
+        print(error.localizedDescription)
+    }
+    
+}
+
+func testRollbackTransfer() async {
+    print("Test 5: Rollback Transfer")
+    let account = BankAccount(accountNumber: "001", initialBalance: 1000)
+    let account2 = BankAccount(accountNumber: "003", initialBalance: 500)
+    
+    do {
+        try await account.transfer(to: account2, amount: 1100)
+    } catch let error as TransferError {
+        print(error.localized)
+    } catch {
+        print(error)
+    }
 }
 
 func sleep(_ secs: Int = 5) async {

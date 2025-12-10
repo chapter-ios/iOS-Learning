@@ -41,7 +41,7 @@ struct Transactions {
         case deposit
         case withdrawal
         case transferIn(from: String)
-        case transferOun(to: String)
+        case transferOut(to: String)
     }
 
 }
@@ -60,7 +60,7 @@ actor BankAccount {
     // MARK: Deposit
     /// Menambahkan saldo.
     /// - Throws: invalidAmount jika amount <= 0
-    func deposit(_ amount: Decimal) throws {
+    func deposit(_ amount: Decimal) async throws {
         // Add to balance
         
         guard amount > 0 else {
@@ -110,13 +110,13 @@ actor BankAccount {
             try await account.deposit(amount)
             
             //create success statement
-            self.recordTransaction(type: .transferOun(to: account.accountNumber), amount: amount)
+            self.recordTransaction(type: .transferOut(to: account.accountNumber), amount: amount)
             await account.recordTransaction(type: .transferIn(from: self.accountNumber), amount: amount)
         } catch  {
             
             //if failed, then transfer back to the sender
             if didWithdraw {
-                try self.deposit(amount)
+                try await self.deposit(amount)
             }
             
             throw TransferError.depositFailed(reason: "Cannot transfer to \(account.accountNumber)")
@@ -157,7 +157,12 @@ func testConcurrentDeposits() async {
     await withTaskGroup(of: Void.self) { group in
         for i in 1...10 {
             group.addTask {
-                try? await account.deposit(100)
+                do {
+                    try await account.deposit(100)
+                } catch {
+                    print("Deposit failed: \(error)")
+                }
+                
             }
         }
     }
@@ -166,9 +171,9 @@ func testConcurrentDeposits() async {
     let expected: Decimal = 1000
     
     if finalBalance == expected {
-        print("✅ PASS: Final balance = \(finalBalance)")
+        print("PASS: Final balance = \(finalBalance)")
     } else {
-        print("❌ FAIL: Expected \(expected), got \(finalBalance)")
+        print("FAIL: Expected \(expected), got \(finalBalance)")
     }
 }
 
@@ -196,12 +201,8 @@ func testConcurrentTransfer() async {
             group.addTask {
                 try? await accountRahmat.transfer(to: accountMarko, amount: 200)
             }
-        }
-    }
-    
-    await withTaskGroup(of: Void.self) { grup in
-        for transfer in 1...5 {
-            grup.addTask {
+            
+            group.addTask {
                 try? await accountMarko.transfer(to: accountRahmat, amount: 200)
             }
         }
@@ -215,7 +216,7 @@ func testConcurrentTransfer() async {
     if totalBalance == expected {
         print("Pass the test for Transfer \(totalBalance)")
     } else {
-        print("❌ FAIL: Expected \(expected), got \(rahmatBalanceAfterTransfer)")
+        print("FAIL: Expected \(expected), got \(rahmatBalanceAfterTransfer)")
     }
 }
 

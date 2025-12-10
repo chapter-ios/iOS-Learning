@@ -199,11 +199,21 @@ func testConcurrentTransfer() async {
         
         for transfer in 1...5 {
             group.addTask {
-                try? await accountRahmat.transfer(to: accountMarko, amount: 200)
+                do {
+                    try await accountRahmat.transfer(to: accountMarko, amount: 200)
+                } catch {
+                    print(error)
+                }
+                
             }
             
             group.addTask {
-                try? await accountMarko.transfer(to: accountRahmat, amount: 200)
+                do {
+                    try await accountMarko.transfer(to: accountRahmat, amount: 200)
+                } catch {
+                    print(error)
+                }
+                
             }
         }
     }

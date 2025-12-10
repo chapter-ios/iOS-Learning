@@ -59,7 +59,7 @@ actor BankAccount {
     
     // MARK: Deposit
     /// Menambahkan saldo.
-    /// - Throws: invalidAmount jika amount <= 0
+    /// - Throws: invalidAmount if amount <= 0
     func deposit(_ amount: Decimal) async throws {
         // Add to balance
         
@@ -123,7 +123,7 @@ actor BankAccount {
         }
     }
     
-    func lihatsaldo() -> String {
+    func getBalanceDescription() -> String {
         "Saldo \(self.accountNumber) adalah \(self.balance)"
     }
     

@@ -27,7 +27,7 @@
 ### Design Decisions
 [Explain how you handled the transfer method]
 - kita bandingkan terlebih dahulu balance >= amount
-    - jika ya:
+    - if yes:
         - withdraw dari current account
         - deposit dari account yg dituju -> account.deposit
         - print hasil

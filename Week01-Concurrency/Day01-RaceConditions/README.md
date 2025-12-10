@@ -3,8 +3,14 @@
 ## What I Learned
 
 [3-4 paragraphs explaining race conditions, why they happen, and how actors solve them]
-- race conditions terjadi ketika beberapa thread mengakses kepada source yg sama dan menyebabkan outcome yg di hasilkan menjadi acak dan tidak terprediksi. actors menjadi solusi karena membuat source tersebut hanya bisa di akses sekali-sekali atau berurutan. sehingga logic tidak tercampur. 
+- Race conditions occur when multiple threads access the same shared resource 
+concurrently without proper synchronization. This leads to unpredictable 
+outcomes because the final result depends on the timing of thread execution, 
+which can vary between runs.
 
+Actors solve this by serializing access to their state. All methods on an 
+actor execute one at a time, even when called from multiple concurrent tasks. 
+This prevents race conditions without manual locking.
 ## Results
 
 ### Unsafe Counter Test Results

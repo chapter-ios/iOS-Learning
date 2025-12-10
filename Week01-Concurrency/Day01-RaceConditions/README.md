@@ -31,14 +31,25 @@ This prevents race conditions without manual locking.
 ## Bank Account Implementation
 
 ### Design Decisions
-[Explain how you handled the transfer method]
-- kita bandingkan terlebih dahulu balance >= amount
-    - if yes:
-        - withdraw dari current account
-        - deposit dari account yg dituju -> account.deposit
-        - print hasil
-    - else:
-        - throw transfer error
+I implemented the transfer using a **two-phase commit pattern**:
+
+**Phase 1: Withdraw**
+- First, withdraw from the source account
+- If this fails (insufficient funds), abort immediately
+- Track success with `didWithdraw` flag
+
+**Phase 2: Deposit**
+- Deposit to the target account
+- If this fails, rollback Phase 1 by re-depositing to source
+
+**Why this approach?**
+- Ensures atomicity: both operations succeed or both fail
+- Prevents money from being lost in the system
+- Handles edge cases like deposit failures gracefully
+
+**Alternative considered:** Locking both accounts before starting. Rejected 
+because actors already provide serialization, and this could cause deadlocks 
+if two transfers happen in opposite directions simultaneously.
 
 ### Edge Cases Handled
 1. The balance is less than the withdraw -> Insufficient Funds
@@ -50,8 +61,22 @@ This prevents race conditions without manual locking.
 
 ## Questions / Uncertainties
 
-[List anything you're still confused about]
-- do actor make thread which call it to be parallel, eventhough it is concurrency
+**Q: Do actors create actual parallel execution, or just concurrent execution?**
+
+A: Actors provide *concurrency* (interleaved execution) but not *parallelism* 
+(simultaneous execution). The actor's serial executor ensures only one method 
+runs at a time, but the calling tasks can be on different threads. The actor 
+serializes their access to its state.
+
+**Q: Why does the unsafe counter lose increments even though += is a single line?**
+
+A: Because `value += 1` is actually three operations:
+1. Read current value
+2. Add 1
+3. Write new value
+
+Multiple threads can interleave these steps, causing lost updates.
+
 
 ## Code Quality Checklist
 - [ ] No force unwraps

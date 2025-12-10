@@ -18,7 +18,7 @@ enum TransferError: Error {
         case .insufficientFunds:
             "You have insufficient funds"
         case .failedTransfer(let account):
-            "You \(account) don't have enough amount of money"
+            "Account \(account) has insufficient funds for withdrawal"
         case .invalidAmount:
             "Amount must be bigger than 0"
         case .selfTransfer:
@@ -74,6 +74,9 @@ actor BankAccount {
     func withdraw(_ amount: Decimal) async throws {
         // Remove from balance
         // Throw error if insufficient funds
+        guard amount > 0 else {
+            throw TransferError.invalidAmount
+        }
         
         guard balance >= amount else {
             throw TransferError.failedTransfer(accountNumber)
@@ -257,6 +260,72 @@ func testRollbackTransfer() async {
         print(error.localized)
     } catch {
         print(error)
+    }
+}
+
+// Test 6: Transfer to nil account (you handle it but don't test it)
+func testTransferToNil() async {
+    print("Test 6: Transfer to Nil Account")
+    let account = BankAccount(accountNumber: "001", initialBalance: 1000)
+    
+    do {
+        try await account.transfer(to: nil, amount: 100)
+        print("FAIL: Should have rejected nil account")
+    } catch TransferError.unexistingAccount {
+        print("PASS: Rejected nil account transfer")
+    } catch {
+        print("FAIL: Wrong error type")
+    }
+}
+
+// Test 7: Negative withdrawal
+func testNegativeWithdrawal() async {
+    print("Test 7: Negative Withdrawal")
+    let account = BankAccount(accountNumber: "001", initialBalance: 1000)
+    
+    do {
+        try await account.withdraw(-100)
+        print("FAIL: Should reject negative amount")
+    } catch TransferError.invalidAmount {
+        print("PASS: Rejected negative withdrawal")
+    } catch {
+        print("FAIL: Wrong error")
+    }
+}
+
+// Test 8: Multiple concurrent withdrawals causing overdraft
+func testRaceConditionOverdraft() async {
+    print("Test 8: Race Condition Overdraft Prevention")
+    let account = BankAccount(accountNumber: "001", initialBalance: 500)
+    var successCount = 0
+    
+    await withTaskGroup(of: Bool.self) { group in
+        // Try to withdraw 200 five times simultaneously (total 1000 from 500 balance)
+        for _ in 0..<5 {
+            group.addTask {
+                do {
+                    try await account.withdraw(200)
+                    return true
+                } catch {
+                    return false
+                }
+            }
+        }
+        
+        for await success in group {
+            if success {
+                successCount += 1
+            }
+        }
+    }
+    
+    let finalBalance = await account.balance
+    
+    // Should allow 2 withdrawals (400), reject 3
+    if successCount == 2 && finalBalance == 100 {
+        print("PASS: Correctly prevented overdraft, 2/5 succeeded")
+    } else {
+        print("FAIL: Expected 2 successes and 100 balance, got \(successCount) successes and \(finalBalance)")
     }
 }
 
